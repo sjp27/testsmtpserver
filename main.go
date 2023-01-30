@@ -81,7 +81,7 @@ func processSMTP(z_conn net.Conn, z_fail string) {
 
         command := strings.Fields(cmd)
 
-        if command[0] != z_fail {
+        if len(command) >= 1 && command[0] != z_fail {
             switch command[0]{
             case "HELO":
                 response(z_conn, OK)
