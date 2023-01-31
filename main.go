@@ -31,7 +31,7 @@ const (
 
 func main() {
     if len(os.Args) < 2 {
-        fmt.Println("Usage: testsmtpserver <port> <fail> (fail command to stop responding e.g. AUTH)")
+        fmt.Println("v1.0 Usage: testsmtpserver port [fail (command to stop responding e.g. AUTH)]")
         os.Exit(1)
     }
 
