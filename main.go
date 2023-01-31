@@ -7,50 +7,73 @@
 package main
 
 import (
-    "encoding/base64"
     "bufio"
+    "crypto/tls"
+    "encoding/base64"
     "fmt"
-    "strings"
     "io"
     "net"
     "os"
+    "strings"
 )
 
 const (
-    WELCOME string = "220 SMTP server ready\r\n"
-    BYE= "221 Bye\r\n"
-    AUTHSUCCESS = "235 Authentication successful\r\n"
-    OK = "250 OK\r\n"
-    EHLO = "250-testemailserver\r\n250-PIPELINING\r\n250-AUTH PLAIN LOGIN\r\n250 8BITMIME\r\n"
-    USERNAME = "334 dXNlcm5hbWU6\r\n"
-    PASSWORD = "334 UGFzc3dvcmQ6\r\n"
-    SEND = "354 Send data\r\n"
-    CMDNOTIMP = "502 Command is not implemented\r\n"
-    BADSEQ = "503 Bad sequence of commands\r\n"
+    WELCOME     string = "220 SMTP server ready\r\n"
+    BYE                = "221 Bye\r\n"
+    AUTHSUCCESS        = "235 Authentication successful\r\n"
+    OK                 = "250 OK\r\n"
+    EHLO               = "250-testemailserver\r\n250-PIPELINING\r\n250-AUTH PLAIN LOGIN\r\n250 8BITMIME\r\n"
+    USERNAME           = "334 dXNlcm5hbWU6\r\n"
+    PASSWORD           = "334 UGFzc3dvcmQ6\r\n"
+    SEND               = "354 Send data\r\n"
+    CMDNOTIMP          = "502 Command is not implemented\r\n"
+    BADSEQ             = "503 Bad sequence of commands\r\n"
 )
 
+var TLSconfig *tls.Config
+
 func main() {
-    if len(os.Args) < 2 {
-        fmt.Println("v1.0 Usage: testsmtpserver port [fail (command to stop responding e.g. AUTH)]")
+    if len(os.Args) < 3 {
+        fmt.Println("v1.0 Usage: testsmtpserver <port> <security (NONE, SSL)> [fail (command to stop responding e.g. AUTH)]")
         os.Exit(1)
     }
 
     // Get the port and fail arguments
     port := fmt.Sprintf(":%s", os.Args[1])
+    security := os.Args[2]
     fail := "NONE"
 
-    if len(os.Args) > 2 {
-        fail = os.Args[2]
+    if len(os.Args) > 3 {
+        fail = os.Args[3]
     }
 
-    fmt.Printf("Listening on port%s, fail command is %s\n", port, fail)
+    cert, err := tls.X509KeyPair(certPem, keyPem)
+    if err != nil {
+        os.Exit(1)
+    }
+
+    TLSconfig = &tls.Config{
+        Certificates: []tls.Certificate{cert},
+    }
 
     // Create tcp listener on given port
-    listener, err := net.Listen("tcp", port)
+    var listener net.Listener
+
+    if security == "NONE" {
+        listener, err = net.Listen("tcp", port)
+    } else if security == "SSL" {
+        listener, err = tls.Listen("tcp", port, TLSconfig)
+    } else {
+        fmt.Println("Unsupported security type")
+        os.Exit(1)
+    }
+
     if err != nil {
         fmt.Println("Failed to create listener, err:", err)
         os.Exit(1)
     }
+
+    fmt.Printf("Listening on port%s, fail command is %s\n", port, fail)
 
     // Listen for new connections
     for {
@@ -82,7 +105,7 @@ func processSMTP(z_conn net.Conn, z_fail string) {
         command := strings.Fields(cmd)
 
         if len(command) >= 1 && command[0] != z_fail {
-            switch command[0]{
+            switch command[0] {
             case "HELO":
                 response(z_conn, OK)
             case "EHLO":
@@ -93,18 +116,18 @@ func processSMTP(z_conn net.Conn, z_fail string) {
                         authPlain(z_conn, "")
                     } else {
                         authPlain(z_conn, command[2])
-                    } 
+                    }
                 } else if command[1] == "LOGIN" {
                     authLogin(z_conn)
                 } else {
                     response(z_conn, CMDNOTIMP)
                 }
             case "MAIL":
-                if(strings.Contains(command[1],"FROM:")) {
+                if strings.Contains(command[1], "FROM:") {
                     response(z_conn, OK)
                 }
             case "RCPT":
-                if(strings.Contains(command[1],"TO:")) {
+                if strings.Contains(command[1], "TO:") {
                     response(z_conn, OK)
                 }
             case "DATA":
@@ -117,9 +140,9 @@ func processSMTP(z_conn net.Conn, z_fail string) {
                 response(z_conn, OK)
             default:
                 response(z_conn, CMDNOTIMP)
-            }//switch
-        }//if
-    }//for
+            } //switch
+        } //if
+    } //for
 }
 
 // Authorise user
@@ -154,7 +177,7 @@ func authPlain(z_conn net.Conn, z_userpassB64 string) {
 func authLogin(z_conn net.Conn) {
     ok := false
     reader := bufio.NewReader(z_conn)
-    
+
     response(z_conn, USERNAME)
 
     // Get username
@@ -183,7 +206,7 @@ func authLogin(z_conn net.Conn) {
         }
     }
 
-    if(ok) {
+    if ok {
         response(z_conn, AUTHSUCCESS)
     } else {
         response(z_conn, BADSEQ)
@@ -198,13 +221,13 @@ func data(z_conn net.Conn) {
     for {
         data, err := request(reader)
         if err != nil {
-            break;
+            break
         }
 
         fmt.Printf("data: %s", data)
 
         if data == ".\r\n" {
-            break;
+            break
         }
     }
     response(z_conn, OK)
@@ -226,3 +249,20 @@ func response(z_conn net.Conn, z_reply string) {
     z_conn.Write([]byte(z_reply))
     fmt.Printf("resp: %s\n", strings.ReplaceAll(z_reply, "\r\n", " "))
 }
+
+var certPem = []byte(`-----BEGIN CERTIFICATE-----
+MIIBhzCCAS2gAwIBAgIUIEKZBvln3+8cly0/9sCRnHE5jxwwCgYIKoZIzj0EAwIw
+GTEXMBUGA1UEAwwOdGVzdHNtdHBzZXJ2ZXIwHhcNMjMwMTMwMTUwMDUxWhcNMzMw
+MTI3MTUwMDUxWjAZMRcwFQYDVQQDDA50ZXN0c210cHNlcnZlcjBZMBMGByqGSM49
+AgEGCCqGSM49AwEHA0IABKIYQrVUv4Ef1Iz8OKjl70i0PK9DQJKr6arX/b8z8cGB
+7fIDsLTFDrJOtYw2rQ5g58BHdnMJB7ghC2Y2uE/P6EyjUzBRMB0GA1UdDgQWBBQZ
+tL11FqQsb/lmajeY0tsHHAN2rzAfBgNVHSMEGDAWgBQZtL11FqQsb/lmajeY0tsH
+HAN2rzAPBgNVHRMBAf8EBTADAQH/MAoGCCqGSM49BAMCA0gAMEUCICJ/v0iFIYsz
+R0jRs9q7GUfcaJMGdhrUEMvsYLe43YNeAiEA5EAG9Mpc+Yi6ewSjdmByXqPRW+Tg
+ftuP+r8cBo4rLtM=
+-----END CERTIFICATE-----`)
+var keyPem = []byte(`-----BEGIN EC PRIVATE KEY-----
+MHcCAQEEIFHaCYp047lMl35osaJeQRxgOPa1y/ZKHq5W51RcmpZooAoGCCqGSM49
+AwEHoUQDQgAEohhCtVS/gR/UjPw4qOXvSLQ8r0NAkqvpqtf9vzPxwYHt8gOwtMUO
+sk61jDatDmDnwEd2cwkHuCELZja4T8/oTA==
+-----END EC PRIVATE KEY-----`)

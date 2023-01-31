@@ -3,7 +3,8 @@
 
 # SYNOPSIS
 **testsmtpserver**
-*port*
+<*port*>
+<*security (NONE, SSL)*>
 [*fail (command to stop responding e.g. AUTH)*]
 
 # DESCRIPTION
