@@ -18,11 +18,12 @@ import (
 )
 
 const (
-    WELCOME     string = "220 SMTP server ready\r\n"
+    READY       string = "220 SMTP server ready\r\n"
     BYE                = "221 Bye\r\n"
     AUTHSUCCESS        = "235 Authentication successful\r\n"
     OK                 = "250 OK\r\n"
     EHLO               = "250-testemailserver\r\n250-PIPELINING\r\n250-AUTH PLAIN LOGIN\r\n250 8BITMIME\r\n"
+    EHLOTLS            = "250-testemailserver\r\n250-PIPELINING\r\n250-STARTTLS\r\n250-AUTH PLAIN LOGIN\r\n250 8BITMIME\r\n"
     USERNAME           = "334 dXNlcm5hbWU6\r\n"
     PASSWORD           = "334 UGFzc3dvcmQ6\r\n"
     SEND               = "354 Send data\r\n"
@@ -34,7 +35,7 @@ var TLSconfig *tls.Config
 
 func main() {
     if len(os.Args) < 3 {
-        fmt.Println("v1.0 Usage: testsmtpserver <port> <security (NONE, SSL)> [fail (command to stop responding e.g. AUTH)]")
+        fmt.Println("v1.0 Usage: testsmtpserver <port> <security (NONE, SSL, TLS)> [fail (command to stop responding e.g. AUTH)]")
         os.Exit(1)
     }
 
@@ -49,17 +50,18 @@ func main() {
 
     cert, err := tls.X509KeyPair(certPem, keyPem)
     if err != nil {
+        fmt.Println("Failed to load cert/key, err:", err)
         os.Exit(1)
     }
 
     TLSconfig = &tls.Config{
-        Certificates: []tls.Certificate{cert},
+        Certificates:       []tls.Certificate{cert},
     }
 
     // Create tcp listener on given port
     var listener net.Listener
 
-    if security == "NONE" {
+    if security == "NONE" || security == "TLS" {
         listener, err = net.Listen("tcp", port)
     } else if security == "SSL" {
         listener, err = tls.Listen("tcp", port, TLSconfig)
@@ -84,14 +86,14 @@ func main() {
         }
 
         // Pass accepted connection to the processSMTP() goroutine
-        go processSMTP(conn, fail)
+        go processSMTP(conn, security, fail)
     }
 }
 
 // Process SMTP commands
-func processSMTP(z_conn net.Conn, z_fail string) {
+func processSMTP(z_conn net.Conn, z_security string, z_fail string) {
     defer z_conn.Close()
-    response(z_conn, WELCOME)
+    response(z_conn, READY)
     reader := bufio.NewReader(z_conn)
     for {
         // Get smtp command
@@ -109,7 +111,20 @@ func processSMTP(z_conn net.Conn, z_fail string) {
             case "HELO":
                 response(z_conn, OK)
             case "EHLO":
-                response(z_conn, EHLO)
+                if z_security == "TLS" {
+                    response(z_conn, EHLOTLS)
+                } else {
+                    response(z_conn, EHLO)
+                }
+            case "STARTTLS":
+                response(z_conn, READY)
+                tlsconn := tls.Server(z_conn, TLSconfig)
+                err = tlsconn.Handshake()
+                if err != nil {
+                    fmt.Println("Failed TLS handshake, err:", err)
+                }
+                z_conn = net.Conn(tlsconn)
+                reader = bufio.NewReader(z_conn)
             case "AUTH":
                 if command[1] == "PLAIN" {
                     if len(command) == 2 {
