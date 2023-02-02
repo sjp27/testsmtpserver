@@ -22,8 +22,8 @@ const (
     BYE                = "221 Bye\r\n"
     AUTHSUCCESS        = "235 Authentication successful\r\n"
     OK                 = "250 OK\r\n"
-    EHLO               = "250-testemailserver\r\n250-PIPELINING\r\n250-AUTH PLAIN LOGIN\r\n250 8BITMIME\r\n"
-    EHLOTLS            = "250-testemailserver\r\n250-PIPELINING\r\n250-STARTTLS\r\n250-AUTH PLAIN LOGIN\r\n250 8BITMIME\r\n"
+    EHLO               = "250-testsmtpserver\r\n250-PIPELINING\r\n250-AUTH PLAIN LOGIN\r\n250 8BITMIME\r\n"
+    EHLOTLS            = "250-testsmtpserver\r\n250-PIPELINING\r\n250-STARTTLS\r\n250-AUTH PLAIN LOGIN\r\n250 8BITMIME\r\n"
     USERNAME           = "334 dXNlcm5hbWU6\r\n"
     PASSWORD           = "334 UGFzc3dvcmQ6\r\n"
     SEND               = "354 Send data\r\n"
@@ -179,7 +179,11 @@ func authPlain(z_conn net.Conn, z_userpassB64 string) {
         userpass, _ = base64.StdEncoding.DecodeString(userpassB64)
     }
 
-    fmt.Printf("userpass: %s\n", userpass)
+    fmt.Printf("userpass: ")
+    for i := 1; i < len(userpass); i++ {
+        fmt.Printf("*")
+    }    
+    fmt.Printf("\n")
 
     if len(userpass) > 0 {
         response(z_conn, AUTHSUCCESS)
@@ -214,7 +218,12 @@ func authLogin(z_conn net.Conn) {
         }
 
         password, _ := base64.StdEncoding.DecodeString(passwordB64)
-        fmt.Printf("pass: %s\n", password)
+
+        fmt.Printf("pass: ")
+        for i := 1; i < len(password); i++ {
+            fmt.Printf("*")
+        }    
+        fmt.Printf("\n")
 
         if len(password) > 0 {
             ok = true
